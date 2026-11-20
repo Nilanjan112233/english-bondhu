@@ -10,7 +10,7 @@ Evidence used:
 - Curriculum/domain unit tests and Android compilation/lint.
 - APK metadata and standalone credential-injection verification.
 - Physical-device E2E on a Xiaomi 2201117SI running Android 13 at 1080×2400: clean install, first launch, free middle-course entry, all four exercise modes, saved progress, weak-item review, text Gemini, Gemini Live, restart, light/dark theme, 130% font, landscape, and offline recovery.
-- Device screenshots and UI hierarchies are retained under `e2e-artifacts/`.
+- Device screenshots and UI hierarchies were kept in a local `e2e-artifacts/` folder (not committed). Emulator screenshots for the README are in `docs/media/`.
 
 ## Findings and v0.4 changes
 

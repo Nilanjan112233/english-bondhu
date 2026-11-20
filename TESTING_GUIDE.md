@@ -25,7 +25,13 @@ The local backend commands below remain available only as optional development d
 On this development machine, NovelForge already holds an encrypted Gemini credential. It can be reused in memory without copying it into this repository:
 
 ```powershell
-.\start-ai-from-novelforge.ps1
+py -3.11 backend\start_from_novelforge.py --novelforge-backend <path-to-NovelForge-backend>
+```
+
+Without NovelForge, start the same gateway with your own key (prompted, hidden input):
+
+```powershell
+.\start-ai-backend.ps1
 ```
 
 This helper is development-only and depends on the local NovelForge backend, MongoDB, its encryption configuration, and Python 3.11 environment. A real deployment must give English Bondhu its own restricted credential and secret store.
@@ -148,4 +154,4 @@ For a clean first-launch test, uninstall the previous app before installing the 
 9. Deny microphone permission once, confirm the explanation is understandable, then grant it and confirm speech recognition starts without requiring an extra tap.
 10. In Live, confirm the privacy note states that audio is sent to Gemini and that the transcript follows the latest turn.
 
-The v0.4.3 pass was exercised on a Xiaomi 2201117SI running Android 13. The full device evidence is summarized in `UX_AUDIT.md` and captured under `e2e-artifacts/`; repeat the checklist on other phone brands and Android versions before public release.
+The v0.4.3 pass was exercised on a Xiaomi 2201117SI running Android 13. The full device evidence is summarized in `UX_AUDIT.md` and captured in a local `e2e-artifacts/` folder (not committed, because it holds personal-device captures); repeat the checklist on other phone brands and Android versions before public release.

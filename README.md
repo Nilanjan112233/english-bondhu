@@ -1,68 +1,103 @@
 # English Bondhu
 
-A Bengali-first, multilingual-ready English learning app built with Kotlin and Jetpack Compose.
+A Bengali-first English-learning app for Android, built with Kotlin and Jetpack Compose. Learners work through a 72-lesson Pre-A1 → A1 path with instructions in Bengali, practise listening, speaking, reading and writing, and can talk to a Gemini-powered tutor by text or by live voice.
 
-## Current prototype
+<p align="center">
+  <img src="docs/media/01-welcome.png" width="200" alt="Welcome screen with three ways to start">
+  <img src="docs/media/02-home.png" width="200" alt="Home screen with next lesson, streak and progress">
+  <img src="docs/media/03-learn.png" width="200" alt="Learning path with searchable units and lessons">
+  <img src="docs/media/04-lesson.png" width="200" alt="Multiple-choice lesson question with Bengali prompt">
+</p>
+<p align="center">
+  <img src="docs/media/05-feedback.png" width="200" alt="Answer feedback with explanation in Bengali">
+  <img src="docs/media/06-practice.png" width="200" alt="Practice hub with smart review and dialogue scenarios">
+  <img src="docs/media/07-ai-tutor.png" width="200" alt="AI tutor chat screen">
+  <img src="docs/media/08-live.png" width="200" alt="Gemini Live voice conversation screen">
+</p>
 
-- Bengali-to-English Pre-A1→A1 path with 72 runnable lessons across 12 practical units
-- Multiple-choice, listening, speaking, and translation work in every curriculum lesson
-- Slow, beginner-friendly Android text-to-speech playback and speech-recognition practice
-- Interactive scoring, saved accuracy, weak-item history, and lesson progress
-- Persistent SM-2 review queue built from the learner's real answers
-- 12-question placement test with a saved level and recommended starting lesson
-- Four guided dialogue scenarios: shopping, doctor, interview, and phone call
-- Direct Bengali-first Gemini 3.1 Flash-Lite tutor with offline fallback and spoken-input correction
-- Direct Gemini 3.1 Flash Live audio-to-audio conversation on the phone with setup timeout and speaker-echo suppression
-- Persistent completed lessons, XP, daily streak, attempts, accuracy, and placement result
-- Material 3 light/dark UI and five primary areas: Home, Learn, Practice, AI Bondhu, and Live
-- First-launch choice screen, lesson/topic search, incomplete filter, safe-exit confirmation, retry controls, and end-of-session summaries
-- Listening prompts conceal the transcript until the learner answers; AI chat supports quick starters, keyboard Send, and automatic scrolling
+<p align="center">
+  <img src="docs/media/lesson-demo.gif" width="260" alt="Short recording of a lesson being completed">
+</p>
 
-Every lesson is freely accessible. Placement and the star marker recommend a useful starting point, but learners can open a later unit, skip familiar material, return to any lesson, and continue from the last lesson they chose.
+Screenshots and the recording come from an Android 11 emulator. The emulator has no Gemini key, text-to-speech voice or speech-recognition app installed, so these images show the lesson flow and the AI screens before a conversation starts. They do not show a live Gemini reply.
 
-The 72-lesson curriculum is CEFR-informed and internally language-checked, but it is not labeled as human teacher-approved yet. `ContentReviewStatus` and [CURRICULUM_REVIEW.md](CURRICULUM_REVIEW.md) provide an auditable sign-off path for a qualified Bengali/English teacher. Publication still requires that review plus learner piloting.
+## What it does
 
-## Run locally
+- **Curriculum:** 72 lessons in 12 practical units (greetings, numbers, family, shopping, travel, health, past tense and more). Every lesson has four exercise types: multiple choice, listening, speaking and translation.
+- **Answer checking:** `AnswerChecker` normalises case, punctuation and common contractions (`I'm` = `I am`) and accepts one or two typos. Missing or changed words are still marked wrong.
+- **Spaced repetition:** each answer updates an SM-2 schedule. Practice → Smart Review shows due and weak items first.
+- **Placement test:** 12 questions pick a starting level and a recommended lesson. All lessons stay unlocked.
+- **Dialogue practice:** shopping, doctor, interview and phone-call scenarios.
+- **Speech:** Android text-to-speech reads prompts at a slower beginner rate. Speaking exercises use the device's speech-to-text. On devices without a speech-recognition app, the app shows a message instead of crashing.
+- **AI Bondhu (text):** the tutor corrects the learner's English, explains the correction in simple Bengali and asks a follow-up question. It uses Gemini structured JSON output. If Gemini cannot be reached, a small keyword-based offline tutor answers instead.
+- **Live (voice):** a Gemini Live WebSocket session streams 16 kHz microphone audio and plays the 24 kHz spoken reply. The screen shows a transcript of both sides. While the model is speaking, the app stops sending microphone audio so the tutor does not hear its own voice.
+- **Progress:** completed lessons, XP, daily streak, accuracy and placement result are saved on the device (SharedPreferences).
 
-1. Install the latest stable Android Studio and its Android SDK 36 platform.
-2. Open this folder in Android Studio.
-3. Select the `app` run configuration and an Android 8+ emulator/device.
-4. Sync Gradle, then run the app.
+## How it is built
 
-From a terminal with JDK 17 and Android SDK configured:
+```text
+ui/EnglishBondhuApp.kt       Compose screens: Welcome, Home, Learn, Practice, AI Bondhu, Live, lesson session
+domain/LearningEngine.kt     AnswerChecker, SM-2 SpacedRepetition, PlacementEngine, StreakCalculator (pure Kotlin)
+data/                        Curriculum content, placement/dialogue sets, ProgressStore (SharedPreferences)
+ai/AiTutor.kt                Gemini REST tutor -> optional local gateway -> offline fallback
+live/GeminiLiveSession.kt    Gemini Live audio-to-audio session (OkHttp WebSocket, AudioRecord/AudioTrack)
+backend/server.py            Optional local Python gateway that keeps the Gemini key off the phone
+```
+
+The tutor tries three options in order:
+
+1. If the APK was built with `GEMINI_API_KEY`, it calls the Gemini API directly.
+2. Otherwise it calls the local gateway at `AI_BASE_URL` (default `http://10.0.2.2:8787`, which is the host machine as seen from the emulator).
+3. If that also fails, the offline tutor answers.
+
+The Live tab needs a key built into the APK.
+
+## Setup
+
+Requirements: JDK 17 and the Android SDK with platform 36 (Android Studio installs both). The app runs on Android 8.0 (API 26) and newer.
 
 ```powershell
 .\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
-Microphone permission is requested only when the learner starts a speaking exercise. Speech recognition availability depends on the recognition service installed on the device.
+The APK is written to `app\build\outputs\apk\debug\app-debug.apk`. Open the folder in Android Studio and run the `app` configuration to install it on an emulator or phone.
 
-## Architecture direction
+### Gemini key (optional)
 
-The prototype has a small UI/data/domain separation. The production version should grow into modules without changing the content model:
+Lessons, practice and the offline tutor work without a key. To use Gemini, add your own key to the git-ignored `local.properties` file in the project root:
 
-```text
-Compose UI -> ViewModels/UDF -> learning domain -> repositories
-                                          |-> local Room progress/content
-                                          |-> speech engine (system or sherpa-onnx)
-                                          |-> secure AI gateway
-                                          |-> content sync API
+```properties
+GEMINI_API_KEY=your-key-here
+# Optional: point the app at the local gateway instead (for example a LAN IP for a real phone)
+# AI_BASE_URL=http://10.0.2.2:8787
 ```
 
-Source language (`bn`, later `hi`, `ta`, etc.), target language (`en`), level, lesson instructions, and exercises are data. Bengali text is not used as a routing key.
+You can also pass the key as `-PGEMINI_API_KEY=...` or set it as an environment variable. Never commit the key. A key built into an APK can be extracted from it, so a key-carrying build is for personal testing only. A public release should use the gateway (or short-lived tokens) instead.
 
-## Personal standalone AI build
+### Local AI gateway (optional)
 
-For the current personal-use phase, `build-standalone-apk.ps1` decrypts the configured NovelForge Gemini key in memory and injects it into Android `BuildConfig`. The resulting APK calls Gemini directly and needs no desktop service. The key is extractable from the APK, so this build must not be distributed publicly. A production release should return to ephemeral tokens or a secured backend.
+The gateway keeps the key on your computer instead of in the APK:
 
-## Next production increments
+```powershell
+.\start-ai-backend.ps1        # asks for the key without echoing it
+Invoke-RestMethod http://127.0.0.1:8787/health
+```
 
-1. Persist learner/profile/progress/reviews in Room and preferences in DataStore.
-2. Convert curriculum to versioned JSON/YAML with validation and an authoring pipeline.
-3. Add account-optional offline mode, then sync with a backend.
-4. Expand the secure Gemini gateway with authentication, conversation scenarios, mistake memory, and audio-based structured feedback.
-5. Integrate downloadable sherpa-onnx voice packs for offline Bengali/English recognition; retain system speech as fallback.
-6. Complete qualified-teacher review and learner pilots for the 72 lessons, then expand the placement/review foundation with achievements and editable daily goals.
-7. Validate Bengali pedagogy and every lesson with qualified teachers before release.
+It has `/v1/tutor` and `/v1/speech-feedback` endpoints, a per-IP rate limit and a request-size cap. Run its tests with `cd backend; python -m unittest`.
 
-See [TESTING_GUIDE.md](TESTING_GUIDE.md), [UX_AUDIT.md](UX_AUDIT.md), [OPEN_SOURCE_EVALUATION.md](OPEN_SOURCE_EVALUATION.md), and [PRODUCT_PLAN.md](PRODUCT_PLAN.md).
+## Tests
+
+- `LearningEngineTest`: answer checking, SM-2 intervals, placement levels and accuracy.
+- `StreakCalculatorTest`: the streak grows on consecutive days and resets after a missed day.
+- `TutorReplyFormatterTest`: parses Gemini responses (including JSON split across parts) and checks the offline tutor.
+- `CourseContentTest`: checks that the curriculum has 72 lessons, all four exercise types in every lesson, unique IDs, and correct answers present among the choices.
+- `backend/test_server.py`: gateway prompt validation and reply formatting.
+
+## Status and limitations
+
+- This is a working prototype. The curriculum is internally reviewed but has not yet been checked by a qualified Bengali/English teacher. See [CURRICULUM_REVIEW.md](CURRICULUM_REVIEW.md).
+- The speaking exercises compare the speech-to-text transcript with the target sentence. They do not grade pronunciation. Only the Live tab sends real audio to the model.
+- Progress is stored only on the device. There are no accounts and no sync.
+- Device testing so far covers one Android 13 phone plus the emulator ([UX_AUDIT.md](UX_AUDIT.md), [TESTING_GUIDE.md](TESTING_GUIDE.md)).
+
+Planning notes: [PRODUCT_PLAN.md](PRODUCT_PLAN.md), [OPEN_SOURCE_EVALUATION.md](OPEN_SOURCE_EVALUATION.md).
