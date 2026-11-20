@@ -81,17 +81,11 @@ class GeminiLiveSession(
     fun stop() {
         if (!running.getAndSet(false)) return
         main.removeCallbacks(setupTimeout)
-        main.removeCallbacks(resumeMicrophone)
-        modelSpeaking.set(false)
         runCatching {
             socket?.send(JSONObject().put("realtimeInput", JSONObject().put("audioStreamEnd", true)).toString())
         }
-        recorder?.runCatching { stop() }
-        recorder?.release()
-        recorder = null
-        player?.runCatching { stop() }
-        player?.release()
-        player = null
+        // Also releases the echo canceler, which the previous inline cleanup leaked.
+        releaseAudio()
         socket?.close(1000, "Learner ended session")
         socket = null
         emitState(LiveConnectionState.IDLE, "লাইভ সেশন বন্ধ হয়েছে।")
@@ -223,19 +217,24 @@ class GeminiLiveSession(
             AudioRecord.getMinBufferSize(16_000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT),
             4_096,
         )
-        recorder = AudioRecord(
+        val audioRecord = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
             16_000,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
             recordBuffer * 2,
         )
-        recorder?.let { audioRecord ->
-            if (AcousticEchoCanceler.isAvailable()) {
-                echoCanceler = AcousticEchoCanceler.create(audioRecord.audioSessionId)?.apply { enabled = true }
-            }
-            audioRecord.startRecording()
+        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+            // Microphone busy or unavailable: end the session cleanly instead of failing later.
+            audioRecord.release()
+            failSession("মাইক্রোফোন চালু করা যায়নি। অন্য app মাইক্রোফোন ব্যবহার করছে কি না দেখুন।")
+            return
         }
+        recorder = audioRecord
+        if (AcousticEchoCanceler.isAvailable()) {
+            echoCanceler = AcousticEchoCanceler.create(audioRecord.audioSessionId)?.apply { enabled = true }
+        }
+        audioRecord.startRecording()
         player = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ASSISTANT)
@@ -283,6 +282,15 @@ class GeminiLiveSession(
         player?.runCatching { stop() }
         player?.release()
         player = null
+    }
+
+    private fun failSession(message: String) {
+        if (!running.getAndSet(false)) return
+        main.removeCallbacks(setupTimeout)
+        releaseAudio()
+        socket?.close(1000, "Client audio unavailable")
+        socket = null
+        emitState(LiveConnectionState.ERROR, message)
     }
 
     private fun emitState(state: LiveConnectionState, message: String) =

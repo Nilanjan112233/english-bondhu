@@ -1,6 +1,7 @@
 package com.englishbondhu.app.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
@@ -8,6 +9,7 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +25,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -217,7 +222,7 @@ fun EnglishBondhuApp() {
                 onPractice = { activeSession = ActiveSession(it, SessionKind.PRACTICE) },
                 modifier = Modifier.padding(padding),
             )
-            Destination.TUTOR -> TutorScreen(Modifier.padding(padding))
+            Destination.TUTOR -> TutorScreen(Modifier.padding(padding).consumeWindowInsets(padding).imePadding())
             Destination.LIVE -> LiveSpeakingScreen(Modifier.padding(padding))
         }
     }
@@ -230,7 +235,7 @@ private fun WelcomeScreen(
     onBrowse: () -> Unit,
 ) {
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding(),
         contentPadding = PaddingValues(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -725,6 +730,14 @@ private fun LessonSession(
             creditedCurrent = false
         }
     }
+    val checkAnswer = {
+        checked = true
+        if (isCorrect && !creditedCurrent) {
+            correctCount++
+            creditedCurrent = true
+        }
+        onAttempt(exercise, answer, isCorrect)
+    }
     val requestClose = {
         if (index > 0 || answer.isNotBlank() || checked) confirmExit = true else onClose()
     }
@@ -780,7 +793,8 @@ private fun LessonSession(
 
     Scaffold { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(20.dp),
+            // imePadding keeps the check button above the keyboard on typed-answer questions.
+            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -795,7 +809,13 @@ private fun LessonSession(
             }
             Text("${lesson.titleBn} • ${lesson.cefrLevel}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Text(exercise.instructionBn, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            ExercisePrompt(exercise = exercise, answer = answer, checked = checked, onAnswer = { if (!checked) answer = it })
+            ExercisePrompt(
+                exercise = exercise,
+                answer = answer,
+                checked = checked,
+                onAnswer = { if (!checked) answer = it },
+                onSubmit = { if (!checked && answer.isNotBlank()) checkAnswer() },
+            )
             Spacer(Modifier.weight(1f))
             if (checked) {
                 Card(
@@ -824,16 +844,7 @@ private fun LessonSession(
             } else {
                 Button(
                     enabled = answer.isNotBlank(),
-                    onClick = {
-                        if (!checked) {
-                            checked = true
-                            if (isCorrect && !creditedCurrent) {
-                                correctCount++
-                                creditedCurrent = true
-                            }
-                            onAttempt(exercise, answer, isCorrect)
-                        } else finishOrAdvance()
-                    },
+                    onClick = { if (!checked) checkAnswer() else finishOrAdvance() },
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                 ) {
                     Text(
@@ -851,7 +862,13 @@ private fun LessonSession(
 }
 
 @Composable
-private fun ExercisePrompt(exercise: Exercise, answer: String, checked: Boolean, onAnswer: (String) -> Unit) {
+private fun ExercisePrompt(
+    exercise: Exercise,
+    answer: String,
+    checked: Boolean,
+    onAnswer: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         PromptCard(
             text = exercise.prompt,
@@ -872,7 +889,9 @@ private fun ExercisePrompt(exercise: Exercise, answer: String, checked: Boolean,
                 onValueChange = onAnswer,
                 label = { Text("ইংরেজিতে লিখুন") },
                 modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onSubmit() }),
             )
             ExerciseType.SPEAKING -> SpeakingInput(exercise.prompt, answer, onAnswer)
         }
@@ -939,18 +958,20 @@ private fun SpeakingInput(prompt: String, answer: String, onAnswer: (String) -> 
             hint = "শোনা হয়েছে: ${matches.first()}"
         } else hint = "কথা বোঝা যায়নি—আবার চেষ্টা করুন"
     }
+    val noRecognizer = "এই ডিভাইসে speech recognition service নেই"
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) recognitionLauncher.launch(intent)
-        else hint = "ভয়েস প্র্যাকটিসের জন্য microphone permission দরকার"
+        if (granted) {
+            if (!recognitionLauncher.launchSafely(intent)) hint = noRecognizer
+        } else hint = "ভয়েস প্র্যাকটিসের জন্য microphone permission দরকার"
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         Button(
             onClick = {
                 if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                    hint = "এই ডিভাইসে speech recognition service নেই"
+                    hint = noRecognizer
                 } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    recognitionLauncher.launch(intent)
+                    if (!recognitionLauncher.launchSafely(intent)) hint = noRecognizer
                 } else {
                     permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
@@ -986,6 +1007,7 @@ private fun TutorScreen(modifier: Modifier = Modifier) {
     }
     var input by remember { mutableStateOf("") }
     var waiting by remember { mutableStateOf(false) }
+    var micNotice by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val sendText: (String) -> Unit = { raw ->
         val sent = raw.trim()
@@ -1064,7 +1086,7 @@ private fun TutorScreen(modifier: Modifier = Modifier) {
             if (waiting) item { Text("বন্ধু ভাবছে…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TutorMicButton(onText = { input = it })
+            TutorMicButton(onText = { input = it }, onUnavailable = { micNotice = it })
             Spacer(Modifier.width(8.dp))
             OutlinedTextField(
                 value = input,
@@ -1084,7 +1106,7 @@ private fun TutorScreen(modifier: Modifier = Modifier) {
             ) { Text("➤") }
         }
         Text(
-            "Internet থাকলে Gemini উত্তর ও correction দেবে; connection না থাকলে basic offline practice চলবে।",
+            micNotice ?: "Internet থাকলে Gemini উত্তর ও correction দেবে; connection না থাকলে basic offline practice চলবে।",
             Modifier.fillMaxWidth().padding(bottom = 8.dp),
             textAlign = TextAlign.Center,
             fontSize = 11.sp,
@@ -1093,8 +1115,20 @@ private fun TutorScreen(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * A recognition *service* can exist without an activity that handles ACTION_RECOGNIZE_SPEECH
+ * (common on emulators and de-Googled phones). Launching then throws, so report it instead.
+ */
+private fun ActivityResultLauncher<Intent>.launchSafely(intent: Intent): Boolean =
+    try {
+        launch(intent)
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    }
+
 @Composable
-private fun TutorMicButton(onText: (String) -> Unit) {
+private fun TutorMicButton(onText: (String) -> Unit, onUnavailable: (String) -> Unit) {
     val context = LocalContext.current
     val speechIntent = remember {
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -1106,14 +1140,18 @@ private fun TutorMicButton(onText: (String) -> Unit) {
     val recognitionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onText)
     }
+    val noRecognizer = "এই ডিভাইসে speech recognition নেই—লিখে পাঠান।"
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) recognitionLauncher.launch(speechIntent)
+        if (!granted) onUnavailable("ভয়েস ইনপুটের জন্য microphone permission দরকার")
+        else if (!recognitionLauncher.launchSafely(speechIntent)) onUnavailable(noRecognizer)
     }
 
     OutlinedButton(
         onClick = {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                recognitionLauncher.launch(speechIntent)
+            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                onUnavailable(noRecognizer)
+            } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                if (!recognitionLauncher.launchSafely(speechIntent)) onUnavailable(noRecognizer)
             } else {
                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }

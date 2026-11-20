@@ -1,5 +1,6 @@
 package com.englishbondhu.app.domain
 
+import java.time.LocalDate
 import java.util.Locale
 import kotlin.math.max
 
@@ -87,6 +88,19 @@ data class LearningStats(
     val weakItems: Int = 0,
 ) {
     val accuracyPercent: Int get() = if (attempts == 0) 0 else correct * 100 / attempts
+}
+
+object StreakCalculator {
+    /** Streak after learning [today], given the last saved learning day and saved streak. */
+    fun afterLearning(lastLearningDay: LocalDate?, savedStreak: Int, today: LocalDate): Int = when (lastLearningDay) {
+        today -> max(1, savedStreak)
+        today.minusDays(1) -> savedStreak + 1
+        else -> 1
+    }
+
+    /** Streak to show now: a saved streak only counts if the learner studied today or yesterday. */
+    fun current(lastLearningDay: LocalDate?, savedStreak: Int, today: LocalDate): Int =
+        if (lastLearningDay == today || lastLearningDay == today.minusDays(1)) savedStreak else 0
 }
 
 object SpacedRepetition {

@@ -1,5 +1,7 @@
 param(
-    [string]$NovelForgeBackend = "D:\Nilanjan\Projects\Novel-Hub\AI Writers\test2\test2\backend"
+    # Folder of a local NovelForge backend that already stores an encrypted Gemini key.
+    [Parameter(Mandatory = $true)]
+    [string]$NovelForgeBackend
 )
 
 $ErrorActionPreference = "Stop"

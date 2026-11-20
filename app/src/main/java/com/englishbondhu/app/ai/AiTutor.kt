@@ -13,7 +13,7 @@ interface AiTutor {
     suspend fun reply(message: String, sourceLanguage: String, level: String): String
 }
 
-/** Safe offline starter. Replace with a backend implementation; never embed provider keys in the APK. */
+/** Keyword-based offline fallback used when no AI backend or Gemini key is reachable. */
 class GuidedTutor : AiTutor {
     override suspend fun reply(message: String, sourceLanguage: String, level: String): String {
         val text = message.trim().lowercase()
@@ -115,17 +115,35 @@ class NetworkAiTutor(
             val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (connection.responseCode !in 200..299) error("Gemini returned ${connection.responseCode}")
-            val raw = JSONObject(body).getJSONArray("candidates").getJSONObject(0)
-                .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-            val result = JSONObject(raw)
-            return buildList {
-                result.optString("correctedEnglish").takeIf { it.isNotBlank() }?.let { add("Correct English: $it") }
-                result.optString("explanationBn").takeIf { it.isNotBlank() }?.let(::add)
-                result.optString("encouragementBn").takeIf { it.isNotBlank() }?.let(::add)
-                result.optString("nextPromptEnglish").takeIf { it.isNotBlank() }?.let { add("Your turn: $it") }
-            }.joinToString("\n\n")
+            val reply = TutorReplyFormatter.format(JSONObject(TutorReplyFormatter.candidateText(body)))
+            check(reply.isNotBlank()) { "Gemini returned an empty tutor reply" }
+            return reply
         } finally {
             connection.disconnect()
         }
     }
+}
+
+/** Pure parsing/formatting helpers, kept separate so they can be unit-tested without a network. */
+object TutorReplyFormatter {
+    /**
+     * Joins every non-thought text part of the first candidate. Structured JSON output can be
+     * split across several parts, so reading only the first part is not safe.
+     */
+    fun candidateText(responseBody: String): String {
+        val parts = JSONObject(responseBody).getJSONArray("candidates").getJSONObject(0)
+            .getJSONObject("content").getJSONArray("parts")
+        return (0 until parts.length())
+            .mapNotNull { parts.optJSONObject(it) }
+            .filterNot { it.optBoolean("thought", false) }
+            .joinToString("") { it.optString("text") }
+    }
+
+    /** Mirrors `format_tutor_reply` in backend/server.py so both paths look the same in the chat. */
+    fun format(result: JSONObject): String = buildList {
+        result.optString("correctedEnglish").trim().takeIf { it.isNotBlank() }?.let { add("Correct English: $it") }
+        result.optString("explanationBn").trim().takeIf { it.isNotBlank() }?.let(::add)
+        result.optString("encouragementBn").trim().takeIf { it.isNotBlank() }?.let(::add)
+        result.optString("nextPromptEnglish").trim().takeIf { it.isNotBlank() }?.let { add("Your turn: $it") }
+    }.joinToString("\n\n")
 }

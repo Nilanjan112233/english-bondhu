@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -18,15 +20,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
-        val aiBaseUrl = providers.gradleProperty("AI_BASE_URL")
-            .orElse("http://10.0.2.2:8787")
-            .get()
-        val geminiApiKey = providers.gradleProperty("GEMINI_API_KEY")
-            .orElse(providers.environmentVariable("GEMINI_API_KEY"))
-            .orElse("")
-            .get()
-        buildConfigField("String", "AI_BASE_URL", "\"$aiBaseUrl\"")
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
+        // Secrets never live in source control. Lookup order: -P Gradle property,
+        // environment variable, then the git-ignored local.properties file.
+        val localProperties = Properties().apply {
+            val file = rootProject.file("local.properties")
+            if (file.isFile) file.inputStream().use(::load)
+        }
+        fun config(name: String, default: String): String =
+            providers.gradleProperty(name)
+                .orElse(providers.environmentVariable(name))
+                .orElse(localProperties.getProperty(name) ?: default)
+                .get()
+                .trim()
+        fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+        buildConfigField("String", "AI_BASE_URL", quoted(config("AI_BASE_URL", "http://10.0.2.2:8787")))
+        buildConfigField("String", "GEMINI_API_KEY", quoted(config("GEMINI_API_KEY", "")))
         buildConfigField("String", "GEMINI_TEXT_MODEL", "\"gemini-3.1-flash-lite\"")
         buildConfigField("String", "GEMINI_LIVE_MODEL", "\"gemini-3.1-flash-live-preview\"")
     }
@@ -68,6 +77,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Android's org.json is a stub in local JVM tests; use the real implementation there.
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

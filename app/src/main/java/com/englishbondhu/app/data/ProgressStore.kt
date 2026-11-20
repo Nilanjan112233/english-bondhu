@@ -7,6 +7,7 @@ import com.englishbondhu.app.domain.PlacementEngine
 import com.englishbondhu.app.domain.PlacementResult
 import com.englishbondhu.app.domain.ReviewState
 import com.englishbondhu.app.domain.SpacedRepetition
+import com.englishbondhu.app.domain.StreakCalculator
 import java.time.LocalDate
 
 class ProgressStore(context: Context) {
@@ -87,22 +88,21 @@ class ProgressStore(context: Context) {
         )
     }
 
+    private fun lastLearningDay(): LocalDate? =
+        preferences.getString("last_learning_day", null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+
     private fun touchLearningDay() {
-        val today = LocalDate.now().toString()
-        val previousDay = preferences.getString("last_learning_day", "")
-        val oldStreak = preferences.getInt("streak", 0)
-        val streak = when {
-            previousDay == today -> oldStreak
-            previousDay == LocalDate.now().minusDays(1).toString() -> oldStreak + 1
-            else -> 1
-        }
+        val today = LocalDate.now()
+        val streak = StreakCalculator.afterLearning(lastLearningDay(), preferences.getInt("streak", 0), today)
         preferences.edit {
-            putString("last_learning_day", today)
+            putString("last_learning_day", today.toString())
             putInt("streak", streak)
         }
     }
 
-    fun streak(): Int = preferences.getInt("streak", 0)
+    /** The visible streak resets to 0 once a full day has been missed. */
+    fun streak(today: LocalDate = LocalDate.now()): Int =
+        StreakCalculator.current(lastLearningDay(), preferences.getInt("streak", 0), today)
 
     fun lastCompletedLessonId(): String? = preferences.getString("last_completed_lesson", null)
 
